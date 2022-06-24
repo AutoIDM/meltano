@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "meltano"
-version = "2.0.2"
+version = "2.1.0"
 description = "Meltano: Your DataOps Platform Infrastructure"
 authors = ["Meltano <hello@meltano.com>"]
 license = "MIT"
@@ -69,9 +69,13 @@ tzlocal = "^4.2.0"
 uvicorn = {extras = ["standard"], version = "^0.17.6"}
 watchdog = "^0.9.0"
 werkzeug = "^1"
+PyMySQL = {version = "^1.0.2", optional = true}
+pymssql = {version = "^2.2.5", optional = true}
 
 [tool.poetry.extras]
 infra = ["ansible"]
+mysql = ["pymysql"]
+mssql = ["pymssql"]
 
 [tool.poetry.dev-dependencies]
 asynctest = "^0.12.2"

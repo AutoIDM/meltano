@@ -1,4 +1,4 @@
-name: Test
+name: Tests
 
 on:
   pull_request: {}
@@ -12,12 +12,21 @@ jobs:
     strategy:
       matrix:
         include:
-        - { python-version: "3.7", os: "ubuntu-latest" }
-        - { python-version: "3.8", os: "ubuntu-latest" }
-        - { python-version: "3.9", os: "ubuntu-latest" }
+        - { python-version: "3.7", os: "ubuntu-latest", backend-db: sqlite }
+        - { python-version: "3.8", os: "ubuntu-latest", backend-db: sqlite }
+        - { python-version: "3.9", os: "ubuntu-latest", backend-db: sqlite }
+        - { python-version: "3.7", os: "ubuntu-latest", backend-db: postgresql }
+        - { python-version: "3.8", os: "ubuntu-latest", backend-db: postgresql }
+        - { python-version: "3.9", os: "ubuntu-latest", backend-db: postgresql }
+        - { python-version: "3.7", os: "ubuntu-latest", backend-db: mssql }
+        - { python-version: "3.8", os: "ubuntu-latest", backend-db: mssql }
+        - { python-version: "3.9", os: "ubuntu-latest", backend-db: mssql }
+        - { python-version: "3.7", os: "ubuntu-latest", backend-db: mysql }
+        - { python-version: "3.8", os: "ubuntu-latest", backend-db: mysql }
+        - { python-version: "3.9", os: "ubuntu-latest", backend-db: mysql }
       fail-fast: false
 
-    name: Pytest on py${{ matrix.python-version }} (${{ matrix.os }})
+    name: "Pytest on py${{ matrix.python-version }} (OS: ${{ matrix.os }}, DB: ${{ matrix.backend-db }})"
     runs-on: ${{ matrix.os }}
     env:
       PYTEST_MARKERS: not concurrent
@@ -50,9 +59,84 @@ jobs:
     - name: Install Dependencies
       run: |
         poetry env use "${{ matrix.python-version }}"
-        poetry install
+        poetry install -E mysql -E mssql
+
+    - name: Start Postgres Container
+      if: always() && (matrix.backend-db == 'postgresql')
+      run: >
+        docker run -d
+        -p "5432:5432"
+        -e "POSTGRES_PASSWORD=postgres"
+        --name postgres
+        --health-cmd "pg_isready -d postgres -U postgres"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+        postgres:11
+
+    - name: Start MSSQL Container
+      if: always() && (matrix.backend-db == 'mssql')
+      run: >
+        docker run -d
+        -p "1433:1433"
+        -e "SA_PASSWORD=Meltan0admin"
+        -e "ACCEPT_EULA=Y"
+        --name mssql
+        --health-cmd "/opt/mssql-tools/bin/sqlcmd -U sa -P Meltan0admin -Q 'select 1' -b -o /dev/null"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+        mcr.microsoft.com/mssql/server:2019-latest
+
+    - name: Start MYSQL Container
+      if: always() && (matrix.backend-db == 'mysql')
+      run: >
+        docker run -d
+        -p "3306:3306"
+        -e "MYSQL_ROOT_PASSWORD=mysql"
+        --name mysql
+        --health-cmd "mysqladmin ping -h 127.0.0.1 -u root --password=mysql"
+        --health-interval 10s
+        --health-timeout 5s
+        --health-retries 5
+        mysql
+        --default-authentication-plugin=mysql_native_password
+        --collation_server=utf8_general_ci 
+        --character_set_server=utf8
+        
+    - name: Wait for MYSQL Container
+      if: always() && (matrix.backend-db == 'mysql')
+      run: sleep 15
+
+    - name: Check running containers
+      run: |
+        docker ps -a
 
     - name: Run pytest
+      env:
+        PYTEST_BACKEND: ${{ matrix.backend-db }}
+
+        # Postgres backend
+        POSTGRES_HOST_AUTH_METHOD: trust
+        POSTGRES_ADDRESS: localhost
+        POSTGRES_PORT: 5432
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: pytest_warehouse
+
+        # MSSQL backend
+        MSSQL_ADDRESS: localhost
+        MSSQL_PORT: 1433
+        MSSQL_USER: sa
+        MSSQL_PASSWORD: Meltan0admin
+        MSSQL_DB: pytest_warehouse
+
+        # MySQL backend
+        MYSQL_ADDRESS: localhost
+        MYSQL_PORT: 3306
+        MYSQL_USER: root
+        MYSQL_PASSWORD: mysql
+        MYSQL_DB: pytest_warehouse
       run: |
         poetry run coverage run --parallel -m pytest -m "$PYTEST_MARKERS"
 
